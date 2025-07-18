@@ -1,0 +1,89 @@
+trigger:
+  - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - name: CONDA_PKGS_DIR
+    value: '~/conda_pkgs_dir'
+
+steps:
+- task: UsePythonVersion@0
+  inputs:
+    versionSpec: '3.11'
+    addToPath: true
+
+- script: |
+    echo "🔍 Checking Azure DevOps Ubuntu-latest image contents..."
+    echo "======================================================"
+
+    echo ""
+    echo "📋 System Information:"
+    echo "OS: $(uname -a)"
+    echo "Distribution: $(lsb_release -d 2>/dev/null || echo 'lsb_release not available')"
+
+    echo ""
+    echo "🐍 Python Information:"
+    echo "Python version: $(python3 --version 2>/dev/null || echo 'python3 not found')"
+    echo "Python location: $(which python3 2>/dev/null || echo 'python3 not in PATH')"
+
+    echo ""
+    echo "📦 Conda Information:"
+    if command -v conda &> /dev/null; then
+      echo "✅ conda is already available in PATH"
+    else
+      CONDA_LOCATION=""
+      for location in "/usr/share/miniconda" "/opt/conda" "$HOME/miniconda" "/usr/local/miniconda"; do
+        if [ -d "$location" ] && [ -f "$location/bin/conda" ]; then
+          CONDA_LOCATION="$location"
+          break
+        fi
+      done
+
+      if [ -n "$CONDA_LOCATION" ]; then
+        echo "✅ Found Miniconda at: $CONDA_LOCATION"
+        export PATH="$CONDA_LOCATION/bin:$PATH"
+      else
+        wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+        bash miniconda.sh -b -p $HOME/miniconda
+        echo "✅ Installed Miniconda at: $HOME/miniconda"
+        export PATH="$HOME/miniconda/bin:$PATH"
+      fi
+    fi
+    echo "conda version: $(conda --version)"
+    echo "conda location: $(which conda)"
+    echo "conda base: $(conda info --base 2>/dev/null || echo 'conda info failed')"
+
+    echo ""
+    echo "🔍 Environment Variables:"
+    echo "TF_BUILD: ${TF_BUILD:-'Not set'}"
+    echo "AGENT_NAME: ${AGENT_NAME:-'Not set'}"
+    echo "BUILD_BUILDID: ${BUILD_BUILDID:-'Not set'}"
+  displayName: 'Check Azure DevOps Image Contents and Setup Conda'
+
+- script: |
+    # Test 1: Install conda-anaconda-tos from defaults channel
+    echo "🧪 Test 1: Installing conda-anaconda-tos 0.2.0 from defaults..."
+    conda install conda-anaconda-tos=0.2.0 -y
+
+    if conda create --dry-run python; then
+      echo "❌ Test 1 FAILED: conda create w/ defaults passed on Azure DevOps CI (expected failure)"
+      exit 1
+    else
+      echo "✅ Test 1 PASSED: conda create w/ defaults failed on Azure DevOps CI (expected failure)"
+    fi
+  displayName: 'Test 1: Install conda-anaconda-tos from defaults channel'
+
+- script: |
+    # Test 2: Install conda-anaconda-tos from canary channel
+    echo "🧪 Test 2: Installing conda-anaconda-tos from canary channel..."
+    conda install distribution-plugins/label/dev::conda-anaconda-tos -y
+
+    if conda create --dry-run python; then
+      echo "✅ Test 2 PASSED: conda create w/ canary passed on Azure DevOps CI (expected success)"
+    else
+      echo "❌ Test 2 FAILED: conda create w/ canary failed on Azure DevOps CI (expected success)"
+      exit 1
+    fi
+  displayName: 'Test 2: Install conda-anaconda-tos from canary channel'
